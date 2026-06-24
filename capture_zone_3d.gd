@@ -95,73 +95,76 @@ func capture_content(child: Node3D = null) -> Image:
 
 ## Internal function to trigger capture from the editor.
 func _capture_in_editor() -> void:
-	var captures: Array = []
-	
+	var metadata: Dictionary = {}
+
 	# Create output directory if it doesn't exist
 	if not DirAccess.dir_exists_absolute(output_directory):
 		DirAccess.make_dir_recursive_absolute(output_directory)
-	
+
+	var rot_quat := Quaternion(global_transform.basis)
+
 	for child in get_children():
 		if (child is CollisionShape3D and child.shape):
 			var shape_filename := name + "_" + child.name
 			var save_path := output_directory.path_join(shape_filename + ".png")
-			
+
 			var img = await capture_content(child)
 			if img is Image:
 				var err := img.save_png(save_path)
 				if err == OK:
 					print("CaptureZone3D: Image saved to ", save_path)
-					
-					captures.append({
+
+					var s = child.shape
+					var size := Vector3.ONE
+					if s is BoxShape3D:
+						size = s.size
+					elif s is SphereShape3D:
+						size = Vector3(s.radius * 2.0, s.radius * 2.0, s.radius * 2.0)
+					elif s is CapsuleShape3D:
+						size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
+					elif s is CylinderShape3D:
+						size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
+
+					var local_aabb := AABB(-size / 2.0, size)
+					var global_aabb := child.global_transform * local_aabb
+					var center := global_aabb.get_center()
+
+					var key := name + "_" + child.name + "_Top"
+					metadata[key] = {
 						"filename": shape_filename + ".png",
-						"type": "Top"
-					})
+						"cubemap_face": "Top",
+						"global_position": {
+							"x": center.x,
+							"y": center.y,
+							"z": center.z
+						},
+						"global_quaternion": {
+							"x": rot_quat.x,
+							"y": rot_quat.y,
+							"z": rot_quat.z,
+							"w": rot_quat.w
+						},
+						"size": {
+							"x": global_aabb.size.x,
+							"y": global_aabb.size.y,
+							"z": global_aabb.size.z
+						}
+					}
 				else:
 					push_error("CaptureZone3D: Failed to save image to ", save_path, " (Error: ", err, ")")
-	
-	if captures.size() > 0:
-		var global_aabb: AABB = AABB()
-		var first_child = get_children()[0] as CollisionShape3D
-		if first_child and first_child.shape:
-			global_aabb = first_child.global_transform * first_child.shape.get_debug_mesh().get_aabb()
-		
-		var rot_quat = Quaternion(global_transform.basis)
-		
-		var metadata = {
-			"name": name,
-			"scenario": scenario,
-			"transform": {
-				"position": {
-					"x": global_position.x,
-					"y": global_position.y,
-					"z": global_position.z
-				},
-				"rotation": {
-					"x": rot_quat.x,
-					"y": rot_quat.y,
-					"z": rot_quat.z,
-					"w": rot_quat.w
-				},
-				"size": {
-					"x": global_aabb.size.x,
-					"y": global_aabb.size.y,
-					"z": global_aabb.size.z
-				}
-			},
-			"captures": captures
-		}
-		
+
+	if metadata.size() > 0:
 		var meta_path = output_directory.path_join(name + "_metadata.json")
 		var meta_file = FileAccess.open(meta_path, FileAccess.WRITE)
 		if meta_file:
 			meta_file.store_string(JSON.stringify(metadata, "\t"))
 			meta_file.close()
 			print("CaptureZone3D: Metadata saved to ", meta_path)
-		
+
 		# Trigger a filesystem scan so the new images appear in the editor
 		if Engine.is_editor_hint():
 			var editor_interface = EditorInterface.get_resource_filesystem()
 			if editor_interface:
 				editor_interface.scan()
 	else:
-		push_warning("CaptureZone3D: No valid collision shapes found to capture.")
+		push_warning("CaptureZone3D: No valid collision shapes found to capture or all captures failed.")
