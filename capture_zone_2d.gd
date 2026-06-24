@@ -80,70 +80,53 @@ func _capture_in_editor() -> void:
 	if not Engine.is_editor_hint():
 		# This is intended for use in the editor, but can be called from code.
 		pass
-	
-	var captures: Array = []
-	
+
+	var metadata: Dictionary = {}
+
 	# Create output directory if it doesn't exist
 	if not DirAccess.dir_exists_absolute(output_directory):
 		DirAccess.make_dir_recursive_absolute(output_directory)
-	
+
 	for child in get_children():
 		if (child is CollisionShape2D and child.shape):
 			var shape_filename := name + "_" + child.name
 			var save_path := output_directory.path_join(shape_filename + ".png")
-			
+
 			var img = await capture_content(child)
 			if img is Image:
 				var err := img.save_png(save_path)
 				if err == OK:
 					print("CaptureZone2D: Image saved to ", save_path)
-					
+
 					var child_rect: Rect2 = child.shape.get_rect()
 					var global_aabb: Rect2 = child.global_transform * child_rect
-					
-					captures.append({
+					var center := global_aabb.get_center()
+
+					var key := name + "_" + child.name + "_Top"
+					metadata[key] = {
 						"filename": shape_filename + ".png",
-						"type": "Top"
-					})
+						"cubemap_face": "Top",
+						"global_position": {
+							"x": center.x,
+							"y": center.y,
+							"z": 0.0
+						},
+						"global_quaternion": {
+							"x": 0.0,
+							"y": 0.0,
+							"z": sin(global_rotation / 2.0),
+							"w": cos(global_rotation / 2.0)
+						},
+						"size": {
+							"x": global_aabb.size.x,
+							"y": global_aabb.size.y,
+							"z": 0.0
+						}
+					}
 				else:
 					push_error("CaptureZone2D: Failed to save image to ", save_path, " (Error: ", err, ")")
 	
-	if captures.size() > 0:
-		# Calculate bounding box from all children
-		var combined_rect = Rect2()
-		for child in get_children():
-			if child is CollisionShape2D and child.shape:
-				var child_rect: Rect2 = child.shape.get_rect()
-				var global_aabb: Rect2 = child.global_transform * child_rect
-				if combined_rect.size == Vector2.ZERO:
-					combined_rect = global_aabb
-				else:
-					combined_rect = combined_rect.merge(global_aabb)
-		
-		var metadata = {
-			"name": name,
-			"scenario": scenario,
-			"transform": {
-				"position": {
-					"x": combined_rect.position.x,
-					"y": combined_rect.position.y,
-					"z": 0.0
-				},
-				"rotation": {
-					"x": 0.0,
-					"y": 0.0,
-					"z": sin(global_rotation / 2.0),
-					"w": cos(global_rotation / 2.0)
-				},
-				"size": {
-					"x": combined_rect.size.x,
-					"y": combined_rect.size.y,
-					"z": 0.0
-				}
-			},
-			"captures": captures
-		}
-		
+	if metadata.size() > 0:
 		var meta_path = output_directory.path_join(name + "_metadata.json")
 		var meta_file = FileAccess.open(meta_path, FileAccess.WRITE)
 		if meta_file:
@@ -157,4 +140,4 @@ func _capture_in_editor() -> void:
 			if editor_interface:
 				editor_interface.scan()
 	else:
-		push_warning("CaptureZone2D: No valid collision shapes found to capture.")
+		push_warning("CaptureZone2D: No valid collision shapes found to capture or all captures failed.")
