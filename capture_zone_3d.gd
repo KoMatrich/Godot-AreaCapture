@@ -30,20 +30,25 @@ func capture_content(child: Node3D = null) -> Image:
 	var global_aabb: AABB
 
 	if child:
-		if child is CollisionShape3D and child.shape:
-			var s = child.shape
+		var collision_shape := child as CollisionShape3D
+		if collision_shape and collision_shape.shape:
+			var s := collision_shape.shape
 			var size := Vector3.ONE
-			if s is BoxShape3D:
-				size = s.size
-			elif s is SphereShape3D:
-				size = Vector3(s.radius * 2.0, s.radius * 2.0, s.radius * 2.0)
-			elif s is CapsuleShape3D:
-				size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
-			elif s is CylinderShape3D:
-				size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
+			var box := s as BoxShape3D
+			var sphere := s as SphereShape3D
+			var capsule := s as CapsuleShape3D
+			var cylinder := s as CylinderShape3D
+			if box:
+				size = box.size
+			elif sphere:
+				size = Vector3(sphere.radius * 2.0, sphere.radius * 2.0, sphere.radius * 2.0)
+			elif capsule:
+				size = Vector3(capsule.radius * 2.0, capsule.height, capsule.radius * 2.0)
+			elif cylinder:
+				size = Vector3(cylinder.radius * 2.0, cylinder.height, cylinder.radius * 2.0)
 
 			var local_aabb := AABB(-size / 2.0, size)
-			global_aabb = child.global_transform * local_aabb
+			global_aabb = collision_shape.global_transform * local_aabb
 		else:
 			push_warning("CaptureZone3D: Provided node is not a supported collision shape.")
 			return null
@@ -115,28 +120,33 @@ func _run_capture() -> void:
 	var rot_quat := Quaternion(global_transform.basis)
 
 	for child in get_children():
-		if child is CollisionShape3D and child.shape:
+		var collision_shape := child as CollisionShape3D
+		if collision_shape and collision_shape.shape:
 			var base: String = filename if filename != "" else name
-			var shape_filename := base + "_" + child.name
+			var shape_filename := base + "_" + collision_shape.name
 			var save_path := output_directory.path_join(shape_filename + ".png")
-			print("[CaptureZone3D] _run_capture: processing child '%s' -> '%s'" % [child.name, save_path])
+			print("[CaptureZone3D] _run_capture: processing child '%s' -> '%s'" % [collision_shape.name, save_path])
 
-			var img = await capture_content(child)
-			if img is Image:
+			var img := await capture_content(collision_shape)
+			if img:
 				var err := img.save_png(save_path)
 				if err == OK:
 					print("[CaptureZone3D] _run_capture: saved '%s'" % [save_path])
 
-					var s = child.shape
+					var s := collision_shape.shape
 					var size := Vector3.ONE
-					if s is BoxShape3D:
-						size = s.size
-					elif s is SphereShape3D:
-						size = Vector3(s.radius * 2.0, s.radius * 2.0, s.radius * 2.0)
-					elif s is CapsuleShape3D:
-						size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
-					elif s is CylinderShape3D:
-						size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
+					var box := s as BoxShape3D
+					var sphere := s as SphereShape3D
+					var capsule := s as CapsuleShape3D
+					var cylinder := s as CylinderShape3D
+					if box:
+						size = box.size
+					elif sphere:
+						size = Vector3(sphere.radius * 2.0, sphere.radius * 2.0, sphere.radius * 2.0)
+					elif capsule:
+						size = Vector3(capsule.radius * 2.0, capsule.height, capsule.radius * 2.0)
+					elif cylinder:
+						size = Vector3(cylinder.radius * 2.0, cylinder.height, cylinder.radius * 2.0)
 
 					var local_aabb := AABB(-size / 2.0, size)
 					var global_aabb: AABB = child.global_transform * local_aabb

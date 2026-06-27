@@ -16,10 +16,12 @@ var verbose: bool = false
 ## Reports the position of a trackable object.
 func report_position(tag: String, node: Node) -> void:
 	var pos: Variant
-	if node is Node2D:
-		pos = node.global_position
-	elif node is Node3D:
-		pos = node.global_position
+	var node2d := node as Node2D
+	var node3d := node as Node3D
+	if node2d:
+		pos = node2d.global_position
+	elif node3d:
+		pos = node3d.global_position
 	else:
 		push_warning("PositionTracker: Attempted to report position of unsupported node type.")
 		return
@@ -64,8 +66,12 @@ func get_tracked_objects(tag: String) -> Array:
 func get_position(tag: String) -> Variant:
 	var obj = get_tracked_object(tag)
 	if obj:
-		if obj is Node2D or obj is Node3D:
-			return obj.global_position
+		var obj2d := obj as Node2D
+		if obj2d:
+			return obj2d.global_position
+		var obj3d := obj as Node3D
+		if obj3d:
+			return obj3d.global_position
 	return null
 
 ## Returns true if a tag is currently registered.

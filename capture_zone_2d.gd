@@ -30,9 +30,10 @@ func capture_content(child: Node2D = null) -> Image:
 	var global_aabb: Rect2
 
 	if child:
-		if child is CollisionShape2D and child.shape:
-			var child_rect: Rect2 = child.shape.get_rect()
-			global_aabb = child.global_transform * child_rect
+		var collision_shape := child as CollisionShape2D
+		if collision_shape and collision_shape.shape:
+			var child_rect: Rect2 = collision_shape.shape.get_rect()
+			global_aabb = collision_shape.global_transform * child_rect
 		else:
 			push_warning("CaptureZone2D: Provided node is not a supported collision shape.")
 			return null
@@ -95,20 +96,21 @@ func _run_capture() -> void:
 		DirAccess.make_dir_recursive_absolute(output_directory)
 
 	for child in get_children():
-		if child is CollisionShape2D and child.shape:
+		var collision_shape := child as CollisionShape2D
+		if collision_shape and collision_shape.shape:
 			var base: String = filename if filename != "" else name
-			var shape_filename := base + "_" + child.name
+			var shape_filename := base + "_" + collision_shape.name
 			var save_path := output_directory.path_join(shape_filename + ".png")
-			print("[CaptureZone2D] _run_capture: processing child '%s' -> '%s'" % [child.name, save_path])
+			print("[CaptureZone2D] _run_capture: processing child '%s' -> '%s'" % [collision_shape.name, save_path])
 
-			var img = await capture_content(child)
-			if img is Image:
+			var img := await capture_content(collision_shape)
+			if img:
 				var err := img.save_png(save_path)
 				if err == OK:
 					print("[CaptureZone2D] _run_capture: saved '%s'" % [save_path])
 
-					var child_rect: Rect2 = child.shape.get_rect()
-					var global_aabb: Rect2 = child.global_transform * child_rect
+					var child_rect: Rect2 = collision_shape.shape.get_rect()
+					var global_aabb: Rect2 = collision_shape.global_transform * child_rect
 					var center := global_aabb.get_center()
 
 					var key := name + "_" + child.name + "_Top"
