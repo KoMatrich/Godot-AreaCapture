@@ -50,8 +50,10 @@ func _exit_tree() -> void:
 
 func _register() -> void:
 	if tag_name != "":
+		print("[Trackable2D] _register: tag='%s' node='%s'" % [tag_name, name])
 		PositionTracker.register_object(tag_name, self)
 
 func _unregister() -> void:
 	if tag_name != "" and is_inside_tree():
+		print("[Trackable2D] _unregister: tag='%s' node='%s'" % [tag_name, name])
 		PositionTracker.unregister_object(tag_name, self)

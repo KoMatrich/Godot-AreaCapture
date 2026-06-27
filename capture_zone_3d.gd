@@ -1,35 +1,36 @@
 extends Area3D
 class_name CaptureZone3D
 
-## This script adds a special bounding box / script that can be applied to object.
-## It is used to capture an image of their content from top.
+## Provides a bounding zone that captures a top-down PNG image of its 3D content.
+## Triggered by setting recapture=true and pressing Play in the Godot editor.
+## The game must be running for the capture to work (SubViewport rendering requires
+## an active render loop).
 
-## If enabled, it will capture the image of the zone's content.
+## When true, triggers a capture on the next game start. Resets to false after capture.
 @export var recapture: bool = false
 
 ## The directory where the captured image will be saved.
 @export_dir var output_directory: String = "res://export/capture/"
 
-## The filename of the captured image (without extension).
-@export var filename: String = "capture_zone_image"
-## Scenario name for metadata.
-@export var scenario: String = ""
-func _ready() -> void:
-	# run only in editor build
-	if recapture:
-		_capture_in_editor()
+## Base filename prefix for captured images (without extension).
+## Captured files are named <filename>_<shape_name>.png.
+## If empty, the node name is used as the prefix.
+@export var filename: String = ""
 
-## Captures an image of the content within a specific child collision node.
-## 3D scene image is captured using orthographic camera from top.
+## Scenario name written into the metadata JSON.
+@export var scenario: String = ""
+
+func _ready() -> void:
+	if recapture:
+		_run_capture()
+
+## Captures a top-down orthographic image of the content within a specific child collision node.
 ## Returns an Image object or null if failed.
 func capture_content(child: Node3D = null) -> Image:
 	var global_aabb: AABB
-	
+
 	if child:
 		if child is CollisionShape3D and child.shape:
-			# Get the world axis-aligned bounding box of this child
-			# We approximate AABB using child's global position and some default size if we can't get it easily
-			# For better accuracy, we can use the shape properties
 			var s = child.shape
 			var size := Vector3.ONE
 			if s is BoxShape3D:
@@ -40,7 +41,7 @@ func capture_content(child: Node3D = null) -> Image:
 				size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
 			elif s is CylinderShape3D:
 				size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
-			
+
 			var local_aabb := AABB(-size / 2.0, size)
 			global_aabb = child.global_transform * local_aabb
 		else:
@@ -54,65 +55,77 @@ func capture_content(child: Node3D = null) -> Image:
 		push_warning("CaptureZone3D: Capture area is empty or invalid.")
 		return null
 
+	print("[CaptureZone3D] capture_content: AABB pos=%s size=%s" % [global_aabb.position, global_aabb.size])
+
 	var viewport := get_viewport()
 	if not viewport:
+		push_warning("CaptureZone3D: No viewport available.")
 		return null
-	
+
 	var sub_viewport := SubViewport.new()
 	add_child(sub_viewport)
-	
-	# Image captured from top (X, Z plane)
-	sub_viewport.size = Vector2i(int(global_aabb.size.x * 100), int(global_aabb.size.z * 100)) # Scaling factor for 3D to Pixels
+
+	# Image captured from top (X, Z plane). 100 px per world unit.
+	sub_viewport.size = Vector2i(int(global_aabb.size.x * 100), int(global_aabb.size.z * 100))
 	sub_viewport.transparent_bg = true
-	sub_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-	sub_viewport.own_world_3d = false # Use same world
+	# Defer rendering until the camera is positioned to avoid a blank frame.
+	sub_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	sub_viewport.own_world_3d = false
 	sub_viewport.world_3d = viewport.world_3d
-	
+
+	print("[CaptureZone3D] capture_content: SubViewport size=%s" % [sub_viewport.size])
+
 	var camera := Camera3D.new()
 	sub_viewport.add_child(camera)
-	
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = max(global_aabb.size.x, global_aabb.size.z)
-	
-	# Position camera above the center of AABB
+	# camera.size is the orthographic height in world units; width follows from SubViewport aspect ratio.
+	camera.size = global_aabb.size.z
+
 	var center := global_aabb.get_center()
 	camera.global_position = center + Vector3(0, global_aabb.size.y / 2.0 + 1.0, 0)
-	camera.look_at(center, Vector3.FORWARD) # Use FORWARD to keep -Z as "up"
-	
+	camera.look_at(center, Vector3.FORWARD)
 	camera.make_current()
-	
-	# Wait for the frame to be drawn
+
+	print("[CaptureZone3D] capture_content: Camera3D position=%s size=%.4f look_at=%s" % [camera.global_position, camera.size, center])
+
+	sub_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
-	
+
 	var img = sub_viewport.get_texture().get_image()
-	
-	# Cleanup
+	print("[CaptureZone3D] capture_content: Image size=%s" % [img.get_size() if img else Vector2i.ZERO])
+
 	remove_child(sub_viewport)
 	sub_viewport.queue_free()
-	
+
 	return img
 
-## Internal function to trigger capture from the editor.
-func _capture_in_editor() -> void:
+## Captures all child CollisionShape3D zones and exports PNG + metadata JSON.
+## Runs when the game starts with recapture=true; resets the flag when done.
+func _run_capture() -> void:
+	recapture = false
+	print("[CaptureZone3D] _run_capture: started for '%s', output='%s'" % [name, output_directory])
+
 	var metadata: Dictionary = {}
 
-	# Create output directory if it doesn't exist
 	if not DirAccess.dir_exists_absolute(output_directory):
 		DirAccess.make_dir_recursive_absolute(output_directory)
 
 	var rot_quat := Quaternion(global_transform.basis)
 
 	for child in get_children():
-		if (child is CollisionShape3D and child.shape):
-			var shape_filename := name + "_" + child.name
+		if child is CollisionShape3D and child.shape:
+			var base: String = filename if filename != "" else name
+			var shape_filename := base + "_" + child.name
 			var save_path := output_directory.path_join(shape_filename + ".png")
+			print("[CaptureZone3D] _run_capture: processing child '%s' -> '%s'" % [child.name, save_path])
 
 			var img = await capture_content(child)
 			if img is Image:
 				var err := img.save_png(save_path)
 				if err == OK:
-					print("CaptureZone3D: Image saved to ", save_path)
+					print("[CaptureZone3D] _run_capture: saved '%s'" % [save_path])
 
 					var s = child.shape
 					var size := Vector3.ONE
@@ -126,7 +139,7 @@ func _capture_in_editor() -> void:
 						size = Vector3(s.radius * 2.0, s.height, s.radius * 2.0)
 
 					var local_aabb := AABB(-size / 2.0, size)
-					var global_aabb := child.global_transform * local_aabb
+					var global_aabb: AABB = child.global_transform * local_aabb
 					var center := global_aabb.get_center()
 
 					var key := name + "_" + child.name + "_Top"
@@ -151,7 +164,7 @@ func _capture_in_editor() -> void:
 						}
 					}
 				else:
-					push_error("CaptureZone3D: Failed to save image to ", save_path, " (Error: ", err, ")")
+					push_error("CaptureZone3D: Failed to save '%s' (err=%d)" % [save_path, err])
 
 	if metadata.size() > 0:
 		var meta_path = output_directory.path_join(name + "_metadata.json")
@@ -159,12 +172,6 @@ func _capture_in_editor() -> void:
 		if meta_file:
 			meta_file.store_string(JSON.stringify(metadata, "\t"))
 			meta_file.close()
-			print("CaptureZone3D: Metadata saved to ", meta_path)
-
-		# Trigger a filesystem scan so the new images appear in the editor
-		if Engine.is_editor_hint():
-			var editor_interface = EditorInterface.get_resource_filesystem()
-			if editor_interface:
-				editor_interface.scan()
+			print("[CaptureZone3D] _run_capture: metadata saved to '%s'" % [meta_path])
 	else:
-		push_warning("CaptureZone3D: No valid collision shapes found to capture or all captures failed.")
+		push_warning("CaptureZone3D: No valid collision shapes found or all captures failed.")

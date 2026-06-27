@@ -9,6 +9,10 @@ signal position_reported(tag: String, node: Node, position: Variant)
 # Dictionary of tag_name -> Array of Node
 var _tracked_objects: Dictionary[String, Array] = {}
 
+## Set to true to print every position report to the console.
+## Off by default to avoid flooding the log at high report rates.
+var verbose: bool = false
+
 ## Reports the position of a trackable object.
 func report_position(tag: String, node: Node) -> void:
 	var pos: Variant
@@ -19,12 +23,12 @@ func report_position(tag: String, node: Node) -> void:
 	else:
 		push_warning("PositionTracker: Attempted to report position of unsupported node type.")
 		return
-	
+
 	position_reported.emit(tag, node, pos)
-	# For now, print the report to the console for verification.
-	print("[%s] %s: %s" % [tag, node.name, pos])
-	
-	
+	if verbose:
+		print("[PositionTracker] report: tag='%s' node='%s' pos=%s" % [tag, node.name, pos])
+
+
 ## Registers a node with a specific tag.
 func register_object(tag: String, node: Node) -> void:
 	if tag == "":
@@ -34,11 +38,13 @@ func register_object(tag: String, node: Node) -> void:
 		_tracked_objects[tag] = []
 	if node not in _tracked_objects[tag]:
 		_tracked_objects[tag].append(node)
+		print("[PositionTracker] register: tag='%s' node='%s' (total for tag: %d)" % [tag, node.name, _tracked_objects[tag].size()])
 
 ## Unregisters a node with a specific tag.
 func unregister_object(tag: String, node: Node) -> void:
 	if _tracked_objects.has(tag):
 		_tracked_objects[tag].erase(node)
+		print("[PositionTracker] unregister: tag='%s' node='%s'" % [tag, node.name])
 		if _tracked_objects[tag].is_empty():
 			_tracked_objects.erase(tag)
 
